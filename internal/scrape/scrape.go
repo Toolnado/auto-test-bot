@@ -32,53 +32,9 @@ func (s *ScrapeBot) Scrape(url string) {
 				items := s.Find("input")
 				lenItems := len(items.Nodes)
 				if lenItems > 0 {
-					items.Each(func(i int, s *goquery.Selection) {
-						typeInput, ok := s.Attr("type")
-
-						if !ok {
-							log.Println("type not found")
-							return
-						}
-
-						switch typeInput {
-						case "radio":
-							item.Name = typeInput
-							val, ok := s.Attr("value")
-
-							if !ok {
-								log.Println("value not found")
-								return
-							}
-
-							item.Items = append(item.Items, val)
-						case "text":
-							item.Name = typeInput
-							s.SetAttr("value", "test")
-							log.Printf("%v set to 'test'\n", item.Name)
-						default:
-						}
-					})
-
-					if item.Name == "radio" {
-						fmt.Printf("Group: %v\n", item)
-
-						hightItem := searchLongInput(item.Items)
-
-						items.Each(func(i int, s *goquery.Selection) {
-							val, ok := s.Attr("value")
-
-							if !ok {
-								log.Printf("Value not found\n")
-							}
-
-							if val == hightItem {
-								s.SetAttr("checked", "true")
-								log.Printf("%s checked set to true", val)
-							}
-						})
-
+					if err := setInputsSettings(items, item); err != nil {
+						log.Printf("Error of inputs settings: %s", err.Error())
 					}
-
 				}
 
 			})
@@ -108,4 +64,53 @@ func searchLongInput(items []string) string {
 	}
 
 	return long
+}
+
+func setInputsSettings(items *goquery.Selection, item *model.Group) error {
+	items.Each(func(i int, s *goquery.Selection) {
+		typeInput, ok := s.Attr("type")
+
+		if !ok {
+			log.Println("type not found")
+		}
+
+		switch typeInput {
+		case "radio":
+			item.Name = typeInput
+			val, ok := s.Attr("value")
+
+			if !ok {
+				log.Println("value not found")
+			}
+
+			item.Items = append(item.Items, val)
+		case "text":
+			item.Name = typeInput
+			s.SetAttr("value", "test")
+			log.Printf("%v set to 'test'\n", item.Name)
+		default:
+		}
+	})
+
+	if item.Name == "radio" {
+		fmt.Printf("Group: %v\n", item)
+
+		hightItem := searchLongInput(item.Items)
+
+		items.Each(func(i int, s *goquery.Selection) {
+			val, ok := s.Attr("value")
+
+			if !ok {
+				log.Printf("Value not found\n")
+			}
+
+			if val == hightItem {
+				s.SetAttr("checked", "true")
+				log.Printf("%s checked set to true", val)
+			}
+		})
+
+	}
+
+	return nil
 }
