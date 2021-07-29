@@ -24,9 +24,7 @@ func (s *ScrapeBot) Scrape(url string) {
 	s.collector.OnHTML("a", func(h *colly.HTMLElement) {
 		questionUrl := h.Attr("href")
 
-		clone := s.collector.Clone()
-
-		clone.OnHTML("form", func(h *colly.HTMLElement) {
+		s.collector.OnHTML("form", func(h *colly.HTMLElement) {
 			h.DOM.Find("p").Each(func(i int, s *goquery.Selection) {
 
 				item := &model.Group{}
@@ -86,7 +84,7 @@ func (s *ScrapeBot) Scrape(url string) {
 			})
 
 		})
-		if err := clone.Visit(url + questionUrl); err != nil {
+		if err := s.collector.Visit(url + questionUrl); err != nil {
 			log.Printf("Error connection: %s", err.Error())
 		}
 
@@ -104,7 +102,7 @@ func searchLongInput(items []string) string {
 
 		long = items[0]
 
-		if len(long) < len(items[i]) {
+		if len([]rune(long)) < len([]rune(items[i])) {
 			long = items[i]
 		}
 	}
