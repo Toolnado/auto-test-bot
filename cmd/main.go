@@ -2,11 +2,13 @@ package main
 
 import "github.com/Toolnado/autotest/internal/scrape"
 
-func main() {
+const (
+	url = "http://test.youplace.net"
+)
 
-	url := "http://test.youplace.net"
+func main() {
 
 	bot := scrape.NewScrapeBot()
 
-	bot.Scrape(url)
+	bot.Run(url)
 }

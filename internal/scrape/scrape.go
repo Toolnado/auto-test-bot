@@ -1,8 +1,10 @@
 package scrape
 
 import (
-	"fmt"
 	"log"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/Toolnado/autotest/internal/model"
@@ -20,30 +22,11 @@ func NewScrapeBot() *ScrapeBot {
 	}
 }
 
-func (s *ScrapeBot) Scrape(url string) {
+func (s *ScrapeBot) Run(url string) {
+	count := 1
 	s.collector.OnHTML("a", func(h *colly.HTMLElement) {
 		questionUrl := h.Attr("href")
-
-		s.collector.OnHTML("form", func(h *colly.HTMLElement) {
-			h.DOM.Find("p").Each(func(i int, s *goquery.Selection) {
-
-				item := &model.Group{}
-
-				items := s.Find("input")
-				lenItems := len(items.Nodes)
-				if lenItems > 0 {
-					if err := setInputsSettings(items, item); err != nil {
-						log.Printf("Error of inputs settings: %s", err.Error())
-					}
-				}
-
-			})
-
-		})
-		if err := s.collector.Visit(url + questionUrl); err != nil {
-			log.Printf("Error connection: %s", err.Error())
-		}
-
+		s.Sqrape(url+questionUrl, &count)
 	})
 
 	if err := s.collector.Visit(url); err != nil {
@@ -52,13 +35,70 @@ func (s *ScrapeBot) Scrape(url string) {
 
 }
 
-func searchLongInput(items []string) string {
-	var long string
+func (s *ScrapeBot) Sqrape(url string, count *int) {
+	var (
+		success bool
+		err     error
+	)
+
+	data := map[string]string{}
+	newCount := *count + 1
+	timer := time.NewTimer(time.Second * 1)
+
+	s.collector.OnHTML("form", func(h *colly.HTMLElement) {
+
+		h.DOM.Find("p").Each(func(i int, s *goquery.Selection) {
+
+			item := &model.Group{}
+			items := s.Find("input")
+			lenItems := len(items.Nodes)
+
+			if lenItems > 0 {
+				data, err = setInputsSettings(items, item, data)
+				if err != nil {
+					log.Printf("Error of inputs settings: %s", err.Error())
+				}
+			}
+
+			sItem := &model.Group{}
+			selects := s.Find("select")
+			lenSelects := len(selects.Nodes)
+
+			if lenSelects > 0 {
+				data, err = setSelectSettings(selects, sItem, data)
+				if err != nil {
+					log.Printf("Error of inputs settings: %s", err.Error())
+				}
+			}
+		})
+
+	})
+
+	if err := s.collector.Visit(url); err != nil {
+		success = true
+		if success {
+			log.Printf("Test successfully passed\n")
+			os.Exit(0)
+		}
+	}
+
+	if err := s.collector.Post(url, data); err != nil {
+		log.Printf("Error post: %s\n", err.Error())
+	}
+
+	log.Printf("Question %d passed: %v\n", *count, data)
+
+	<-timer.C
+
+	s.Sqrape("http://test.youplace.net/question/"+strconv.Itoa(newCount), &newCount)
+
+}
+
+func searchLongValue(items []string) string {
+	long := items[0]
 	for i := 0; i < len(items); i++ {
 
-		long = items[0]
-
-		if len([]rune(long)) < len([]rune(items[i])) {
+		if len([]rune(long)) <= len([]rune(items[i])) {
 			long = items[i]
 		}
 	}
@@ -66,7 +106,8 @@ func searchLongInput(items []string) string {
 	return long
 }
 
-func setInputsSettings(items *goquery.Selection, item *model.Group) error {
+func setInputsSettings(items *goquery.Selection, item *model.Group, data map[string]string) (map[string]string, error) {
+	inputType := ""
 	items.Each(func(i int, s *goquery.Selection) {
 		typeInput, ok := s.Attr("type")
 
@@ -76,7 +117,13 @@ func setInputsSettings(items *goquery.Selection, item *model.Group) error {
 
 		switch typeInput {
 		case "radio":
-			item.Name = typeInput
+			nameInput, ok := s.Attr("name")
+			if !ok {
+				log.Println("value not found")
+			}
+			inputType = typeInput
+			item.Name = nameInput
+
 			val, ok := s.Attr("value")
 
 			if !ok {
@@ -85,17 +132,21 @@ func setInputsSettings(items *goquery.Selection, item *model.Group) error {
 
 			item.Items = append(item.Items, val)
 		case "text":
-			item.Name = typeInput
+			nameInput, ok := s.Attr("name")
+			if !ok {
+				log.Println("value not found")
+			}
+			inputType = typeInput
+			item.Name = nameInput
 			s.SetAttr("value", "test")
-			log.Printf("%v set to 'test'\n", item.Name)
+			data[nameInput] = "test"
 		default:
 		}
 	})
 
-	if item.Name == "radio" {
-		fmt.Printf("Group: %v\n", item)
+	if inputType == "radio" {
 
-		hightItem := searchLongInput(item.Items)
+		hightItem := searchLongValue(item.Items)
 
 		items.Each(func(i int, s *goquery.Selection) {
 			val, ok := s.Attr("value")
@@ -104,13 +155,72 @@ func setInputsSettings(items *goquery.Selection, item *model.Group) error {
 				log.Printf("Value not found\n")
 			}
 
+			name, ok := s.Attr("name")
+
+			if !ok {
+				log.Printf("Name not found\n")
+			}
+
 			if val == hightItem {
 				s.SetAttr("checked", "true")
-				log.Printf("%s checked set to true", val)
+				data[name] = val
 			}
 		})
 
 	}
 
-	return nil
+	return data, nil
+}
+
+func setSelectSettings(items *goquery.Selection, item *model.Group, data map[string]string) (map[string]string, error) {
+	items.Each(func(i int, s *goquery.Selection) {
+		selectName, ok := s.Attr("name")
+		if !ok {
+			log.Printf("Name not found\n")
+		}
+		item.Name = selectName
+
+		s.Each(func(i int, s *goquery.Selection) {
+			options := s.Find("option")
+
+			options.Each(func(i int, s *goquery.Selection) {
+				val, ok := s.Attr("value")
+
+				if !ok {
+					log.Printf("Value not found\n")
+				}
+
+				item.Items = append(item.Items, val)
+			})
+		})
+	})
+
+	hightItem := searchLongValue(item.Items)
+
+	items.Each(func(i int, s *goquery.Selection) {
+		name, ok := s.Attr("name")
+
+		if !ok {
+			log.Printf("Name not found\n")
+		}
+		s.Each(func(i int, s *goquery.Selection) {
+			options := s.Find("option")
+
+			options.Each(func(i int, s *goquery.Selection) {
+				val, ok := s.Attr("value")
+
+				if !ok {
+					log.Printf("Value not found\n")
+				}
+
+				if val == hightItem {
+					s.SetAttr("selected", "true")
+					data[name] = val
+				}
+			})
+		})
+
+	})
+
+	return data, nil
 }
